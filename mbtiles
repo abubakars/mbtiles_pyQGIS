@@ -1,0 +1,97 @@
+#Script setup and QGIS environment initialization
+import processing
+from qgis.core import QgsProject
+import os
+project = QgsProject.instance()
+iface.mapCanvas().refresh()
+
+# Get required layers (names must match exactly)
+try:
+    niger_wards  = project.mapLayersByName("niger_Wards")[0]
+    niger_ems    = project.mapLayersByName("niger_EMS")[0]
+    niger_points = project.mapLayersByName("niger_Point")[0] 
+        
+except IndexError:
+
+# Stop if any layer is missing
+    print("Error: One or more layers not found! Check exact names (case-sensitive).")
+    print("Current layers:", [lyr.name() for lyr in project.mapLayers().values()])
+    raise  
+
+# Layers that will be filtered by LGA
+filter_layers = [niger_points, niger_wards, niger_ems]       
+all_layers_visible = [niger_wards, niger_ems, niger_points]  
+
+# Option A: Column used for LGA filtering
+attribute_field = "lganame"
+
+# Folder to save MBTiles
+out_dir = r"C:\eHA\MLoS_Validation\2026\mbtile\mbtiles_prac"
+os.makedirs(out_dir, exist_ok=True)
+
+# Get all unique LGA names from  niger_wards
+lgas = [v for v in niger_wards.uniqueValues(niger_wards.fields().indexFromName(attribute_field)) if v]
+
+# Process one LGA at a time
+for lga in lgas:
+    print(f"Processing LGA: {lga}")
+    
+        # Build a safe filter expression
+    safe_expr = f"{attribute_field} = '{str(lga).replace("'", "''")}'"
+    
+      # Apply LGA filter to all layers
+    for lyr in filter_layers:
+        lyr.setSubsetString(safe_expr)
+    
+    for lyr in filter_layers:
+        lyr.triggerRepaint()
+    iface.mapCanvas().refresh()
+      
+  # Extract wards for this LGA (for extent)
+    filtered_wards = processing.run("native:extractbyexpression", {
+        'INPUT': niger_wards,
+        'EXPRESSION': safe_expr,
+        'OUTPUT': 'memory:'
+    })['OUTPUT']
+    
+    if filtered_wards.featureCount() == 0:
+        print(f" → No features for {lga} – skipping")
+        continue
+    
+    extent = filtered_wards.extent()
+ 
+   # Create safe file name
+    safe_lga = str(lga).strip().replace(' ', '*').replace('/', '*').replace('\\', '_')
+    output_file = os.path.join(out_dir, f"{safe_lga}.mbtiles")
+    
+    # MBTiles export settings
+
+    params = {
+        'EXTENT': extent,                           			# QgsRectangle – accepted directly
+        'ZOOM_MIN': 10,
+        'ZOOM_MAX': 15,
+        'DPI': 96,
+        'BACKGROUND_COLOR': 'rgba(0,0,0,0)',        		# transparent
+        'TILE_FORMAT': 0,                           			# 0 = PNG
+        'QUALITY': 80,
+        'METATILESIZE': 4,
+        'OUTPUT_FILE': output_file
+    }
+    
+  # Generate MBTiles
+    try:
+        processing.run("native:tilesxyzmbtiles", params)
+        print(f"Success → {output_file}")
+    except Exception as e:
+        print(f"Error for {lga}: {str(e)}")
+  
+#Remove all filters (cleanup)
+for lyr in filter_layers:
+    lyr.setSubsetString("")
+
+for lyr in filter_layers:
+    lyr.triggerRepaint()
+
+iface.mapCanvas().refresh()
+print("All MBTiles generated! Check folder:", out_dir)
+
