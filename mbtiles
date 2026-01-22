@@ -61,7 +61,7 @@ for lga in lgas:
     extent = filtered_wards.extent()
  
    # Create safe file name
-    safe_lga = str(lga).strip().replace(' ', '*').replace('/', '*').replace('\\', '_')
+    safe_lga = str(lga).strip().replace(' ', '_').replace('/', '_').replace('\\', '_')
     output_file = os.path.join(out_dir, f"{safe_lga}.mbtiles")
     
     # MBTiles export settings
